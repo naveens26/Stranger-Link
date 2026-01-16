@@ -168,7 +168,7 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen max-h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
       {/* TOAST NOTIFICATION */}
       {notification && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-2 rounded-full shadow-2xl">
@@ -176,6 +176,7 @@ export default function App() {
         </div>
       )}
 
+      {/* Fixed Header */}
       <Header 
         room={room}
         isSearching={isSearching}
@@ -184,19 +185,24 @@ export default function App() {
         onFindPartner={findPartner}
       />
 
-      <main ref={chatContainerRef} className="flex-1 overflow-y-auto p-4">
+      {/* Main Content Area - Takes remaining space */}
+      <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {!room && !isSearching ? (
-          <HomeView 
-            userData={userData}
-            onUserDataChange={setUserData}
-            onFindPartner={findPartner}
-            onSavePreferences={handleSavePreferences}
-          />
+          <div className="flex-1 overflow-y-auto p-4">
+            <HomeView 
+              userData={userData}
+              onUserDataChange={setUserData}
+              onFindPartner={findPartner}
+              onSavePreferences={handleSavePreferences}
+            />
+          </div>
         ) : isSearching ? (
-          <SearchView 
-            userData={userData}
-            onCancelSearch={cancelSearch}
-          />
+          <div className="flex-1 overflow-y-auto p-4">
+            <SearchView 
+              userData={userData}
+              onCancelSearch={cancelSearch}
+            />
+          </div>
         ) : (
           <ChatInterface 
             messages={messages}
@@ -207,8 +213,9 @@ export default function App() {
             messagesEndRef={messagesEndRef}
           />
         )}
-      </main>
+      </div>
 
+      {/* Chat Input - Fixed at bottom */}
       {room && (
         <ChatInput 
           message={message}

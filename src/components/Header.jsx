@@ -7,7 +7,7 @@ const Header = ({
   onFindPartner 
 }) => {
   return (
-    <header className="p-4 border-b border-slate-800 flex justify-between items-center bg-[#1e293b]/50">
+    <header className="sticky top-0 z-40 p-4 border-b border-slate-800 flex justify-between items-center bg-slate-900">
       <div className="flex items-center gap-4">
         <h1 className="text-xl font-black text-white uppercase">Stranger<span className="text-blue-500">Link</span></h1>
         {room && (
@@ -21,25 +21,36 @@ const Header = ({
         {room && (
           <button 
             onClick={onDisconnect}
-            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2"
+            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold flex items-center gap-2 whitespace-nowrap"
           >
             <span>⏏️</span>
-            <span>DISCONNECT</span>
+            <span className="hidden sm:inline">DISCONNECT</span>
+            <span className="sm:hidden">DC</span>
           </button>
         )}
         {isSearching && (
           <button 
             onClick={onCancelSearch}
-            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold"
+            className="bg-red-600 hover:bg-red-500 text-white px-4 py-2 rounded-lg font-bold whitespace-nowrap"
           >
             CANCEL
           </button>
         )}
         <button 
           onClick={onFindPartner} 
-          className="bg-blue-600 hover:bg-blue-500 text-white px-6 py-2 rounded-lg font-bold"
+          className="bg-blue-600 hover:bg-blue-500 text-white px-4 py-2 rounded-lg font-bold whitespace-nowrap"
         >
-          {room ? "NEXT" : "START"}
+          {room ? (
+            <>
+              <span className="hidden sm:inline">NEXT</span>
+              <span className="sm:hidden">➡️</span>
+            </>
+          ) : (
+            <>
+              <span className="hidden sm:inline">START</span>
+              <span className="sm:hidden">▶️</span>
+            </>
+          )}
         </button>
       </div>
     </header>
