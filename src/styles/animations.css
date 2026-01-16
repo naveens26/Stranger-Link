@@ -1,0 +1,31 @@
+/* styles/animations.css */
+@keyframes bounce {
+  0%, 100% { 
+    transform: translateY(0); 
+  }
+  50% { 
+    transform: translateY(-5px); 
+  }
+}
+
+.dot-bounce { 
+  animation: bounce 1s infinite; 
+}
+.dot-bounce-1 { 
+  animation-delay: 0s; 
+}
+.dot-bounce-2 { 
+  animation-delay: 0.2s; 
+}
+.dot-bounce-3 { 
+  animation-delay: 0.4s; 
+}
+
+/* Make sure animation works with any color */
+.animate-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 2px;
+}
