@@ -1,44 +1,69 @@
-// components/ChatInput.jsx
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 
-const ChatInput = ({ 
+const ChatInput = forwardRef(({ 
   message, 
   onMessageChange, 
   onSendMessage, 
   onTypingStart, 
   onTypingEnd, 
   room,
-  onKeyboardToggle // ADD THIS
-}) => {
+  onKeyboardToggle,
+  shouldAutoFocus,
+  setShouldAutoFocus
+}, ref) => {
   const typingTimeoutRef = useRef(null);
-  const inputRef = useRef(null);
+  const internalInputRef = useRef(null);
+  const hasSentFirstMessage = useRef(false);
 
-  // Auto-focus when room is connected
+  // Combine refs
+  useImperativeHandle(ref, () => ({
+    focus: () => {
+      internalInputRef.current?.focus();
+    },
+    blur: () => {
+      internalInputRef.current?.blur();
+    },
+    getElement: () => internalInputRef.current
+  }));
+
+  // Remove auto-focus on room connection
   useEffect(() => {
-    if (room && inputRef.current) {
-      setTimeout(() => {
-        inputRef.current?.focus();
-      }, 1000);
+    if (room && setShouldAutoFocus) {
+      // Don't auto-focus, but allow manual focus later
+      setShouldAutoFocus(true);
     }
-  }, [room]);
+  }, [room, setShouldAutoFocus]);
 
-  // Handle keyboard visibility
+  // Handle keyboard visibility with better detection
   useEffect(() => {
     const handleFocus = () => {
-      if (onKeyboardToggle) onKeyboardToggle(true);
-      setTimeout(() => {
-        window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
-      }, 300);
+      if (onKeyboardToggle) {
+        // Delay to ensure keyboard is fully open
+        setTimeout(() => onKeyboardToggle(true), 100);
+      }
     };
 
     const handleBlur = () => {
-      if (onKeyboardToggle) onKeyboardToggle(false);
+      if (onKeyboardToggle) {
+        // Delay to ensure keyboard is fully closed
+        setTimeout(() => {
+          // Check if any input is still focused
+          const activeElement = document.activeElement;
+          const isAnyInputFocused = activeElement.tagName === 'INPUT' || 
+                                   activeElement.tagName === 'TEXTAREA';
+          
+          if (!isAnyInputFocused) {
+            onKeyboardToggle(false);
+          }
+        }, 300);
+      }
     };
 
-    const input = inputRef.current;
+    const input = internalInputRef.current;
     if (input) {
       input.addEventListener('focus', handleFocus);
       input.addEventListener('blur', handleBlur);
+      
       return () => {
         input.removeEventListener('focus', handleFocus);
         input.removeEventListener('blur', handleBlur);
@@ -67,26 +92,47 @@ const ChatInput = ({
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      handleSend(e);
+    }
+  };
+
+  const handleSend = (e) => {
+    e.preventDefault();
+    
+    if (message.trim() && room) {
+      // Send message
       onSendMessage(e);
+      
+      // Keep keyboard open after sending
+      setTimeout(() => {
+        if (internalInputRef.current) {
+          internalInputRef.current.focus();
+        }
+      }, 50);
+      
+      // Track that we've sent first message
+      hasSentFirstMessage.current = true;
     }
   };
 
   return (
     <form 
-      onSubmit={onSendMessage} 
+      onSubmit={handleSend}
       className="p-4 flex gap-2"
       style={{ 
         paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))'
       }}
     >
       <input 
-        ref={inputRef}
+        ref={internalInputRef}
         value={message}
         onChange={(e) => handleTyping(e.target.value)}
         onKeyDown={handleKeyDown}
         placeholder="Type your message..."
         className="flex-1 bg-slate-800 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-base"
         autoComplete="off"
+        // Disable auto-focus completely
+        autoFocus={false}
       />
       <button 
         type="submit"
@@ -97,6 +143,8 @@ const ChatInput = ({
       </button>
     </form>
   );
-};
+});
+
+ChatInput.displayName = 'ChatInput';
 
 export default ChatInput;

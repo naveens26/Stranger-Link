@@ -1,4 +1,4 @@
-// App.jsx - FINAL VERSION with desktop/mobile support
+// App.jsx - UPDATED VERSION with keyboard fixes
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatInterface from './components/ChatInterface';
@@ -34,10 +34,12 @@ export default function App() {
   // Keyboard state
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
+  const [shouldAutoFocus, setShouldAutoFocus] = useState(false);
   
   const messagesEndRef = useRef();
   const chatContainerRef = useRef();
   const scrollTimeoutRef = useRef(null);
+  const inputRef = useRef(null);
 
   // Detect mobile/desktop
   useEffect(() => {
@@ -90,6 +92,73 @@ export default function App() {
     return () => clearTimeout(timer);
   }, [isPartnerTyping]);
 
+  // Visual viewport handling for keyboard detection
+  useEffect(() => {
+    const handleVisualViewportChange = () => {
+      if (!window.visualViewport) return;
+      
+      const viewportHeight = window.visualViewport.height;
+      const windowHeight = window.innerHeight;
+      const keyboardHeight = windowHeight - viewportHeight;
+      
+      // Keyboard is open if height difference > 100px
+      const keyboardIsOpen = keyboardHeight > 100;
+      
+      if (keyboardIsOpen !== isKeyboardOpen) {
+        setIsKeyboardOpen(keyboardIsOpen);
+      }
+      
+      // Adjust chat container height for smooth transitions
+      if (chatContainerRef.current) {
+        chatContainerRef.current.style.transition = 'height 0.3s ease';
+        chatContainerRef.current.style.height = `${viewportHeight}px`;
+        
+        // When keyboard closes, restore full height
+        if (!keyboardIsOpen) {
+          setTimeout(() => {
+            if (chatContainerRef.current) {
+              chatContainerRef.current.style.height = '100%';
+            }
+          }, 350);
+        }
+      }
+    };
+    
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener('resize', handleVisualViewportChange);
+    }
+    
+    return () => {
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener('resize', handleVisualViewportChange);
+      }
+    };
+  }, [isKeyboardOpen]);
+
+  // Enable auto-focus only after user interaction
+  useEffect(() => {
+    if (room && inputRef.current && shouldAutoFocus) {
+      // Don't auto-focus on connection, wait for user tap
+      const handleFirstTap = (e) => {
+        // Only focus if tap is not on the input itself
+        if (e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+          setTimeout(() => {
+            inputRef.current?.focus();
+          }, 100);
+          // Remove listener after first tap
+          document.removeEventListener('click', handleFirstTap);
+        }
+      };
+      
+      // Add event listener for first interaction
+      document.addEventListener('click', handleFirstTap);
+      
+      return () => {
+        document.removeEventListener('click', handleFirstTap);
+      };
+    }
+  }, [room, shouldAutoFocus]);
+
   const showNotification = (msg) => {
     setNotification(msg);
     setTimeout(() => setNotification(""), 4000);
@@ -102,6 +171,7 @@ export default function App() {
       setMessages([]);
       setIsSearching(false);
       setPartnerInfo(receivedPartnerInfo);
+      setShouldAutoFocus(true); // Allow focus after connection
       showNotification(`Connected to ${receivedPartnerInfo.username}!`);
     },
 
@@ -139,6 +209,7 @@ export default function App() {
     setMessages([]);
     setIsSearching(true);
     setPartnerInfo({ gender: null, username: 'Stranger', showGender: false });
+    setShouldAutoFocus(false); // Reset auto-focus for new connection
     
     emit('find_partner', { 
       fingerprint, 
@@ -161,6 +232,7 @@ export default function App() {
     setRoom(null);
     setMessages([]);
     setPartnerInfo({ gender: null, username: 'Stranger', showGender: false });
+    setShouldAutoFocus(false); // Reset auto-focus
   };
 
   const sendMessage = (e) => {
@@ -170,6 +242,15 @@ export default function App() {
       emit('typing', { room, isTyping: false });
       setMessages(prev => [...prev, { text: message.trim(), sender: 'me' }]);
       setMessage("");
+      
+      // Keep keyboard open after sending on mobile
+      if (isMobile) {
+        setTimeout(() => {
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+        }, 50);
+      }
     }
   };
 
@@ -183,11 +264,17 @@ export default function App() {
     showNotification("Preferences saved!");
   };
 
-  // Close keyboard when tapping messages
+  // Close keyboard when tapping messages (mobile only)
   const handleCloseKeyboard = () => {
-    if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+    if (isMobile && document.activeElement && document.activeElement.tagName === 'INPUT') {
       document.activeElement.blur();
+      setIsKeyboardOpen(false);
     }
+  };
+
+  // Keyboard toggle handler
+  const handleKeyboardToggle = (isOpen) => {
+    setIsKeyboardOpen(isOpen);
   };
 
   return (
@@ -199,10 +286,10 @@ export default function App() {
         </div>
       )}
 
-      {/* HEADER - Always visible on desktop, hides on mobile when keyboard open */}
-      <div className={`sticky top-0 z-40 ${
+      {/* HEADER - Hide on mobile only when keyboard is open */}
+      <div className={`sticky top-0 z-40 transition-transform duration-300 ${
         isMobile && isKeyboardOpen ? '-translate-y-full' : 'translate-y-0'
-      } transition-transform duration-300`}>
+      }`}>
         <Header 
           room={room}
           isSearching={isSearching}
@@ -248,13 +335,16 @@ export default function App() {
             {/* CHAT INPUT - Always at bottom */}
             <div className="sticky bottom-0 z-20 bg-slate-900 border-t border-slate-800">
               <ChatInput 
+                ref={inputRef}
                 message={message}
                 onMessageChange={setMessage}
                 onSendMessage={sendMessage}
                 onTypingStart={handleTypingStart}
                 onTypingEnd={() => handleTypingStart(false)}
                 room={room}
-                onKeyboardToggle={setIsKeyboardOpen}
+                onKeyboardToggle={handleKeyboardToggle}
+                shouldAutoFocus={shouldAutoFocus}
+                setShouldAutoFocus={setShouldAutoFocus}
               />
             </div>
           </>

@@ -29,3 +29,27 @@
   border-radius: 50%;
   margin: 0 2px;
 }
+
+/* Smooth keyboard transitions */
+.keyboard-transition {
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Prevent bounce on iOS */
+html, body {
+  overscroll-behavior-y: none;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* Better viewport handling for mobile */
+@supports (padding: max(0px)) {
+  .safe-area-bottom {
+    padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+  }
+}
+
+/* Smooth header transitions */
+.header-transition {
+  transition: transform 0.3s ease;
+}
