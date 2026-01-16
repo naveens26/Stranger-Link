@@ -7,96 +7,109 @@ const server = http.createServer(app);
 const io = new Server(server, { 
     cors: { 
         origin: "*",
-        methods: ["GET", "POST"]
+        methods: ["GET", "POST"],
+        credentials: true
     },
-    pingTimeout: 10000, // 10 seconds
-    pingInterval: 5000, // 5 seconds
-    connectionStateRecovery: {
-        maxDisconnectionDuration: 2000, // Only 2 seconds for recovery
-        skipMiddlewares: true,
-    }
+    // EXTENDED TIMEOUTS - NO AUTO DISCONNECT
+    pingTimeout: 60000,        // 60 seconds
+    pingInterval: 30000,       // 30 seconds
+    // NO connection state recovery (it can cause issues)
+    connectionStateRecovery: false,
+    // BETTER TRANSPORT HANDLING
+    transports: ['websocket', 'polling'],
+    allowUpgrades: true,
+    // DISABLE COMPRESSION for better stability
+    perMessageDeflate: false,
+    httpCompression: false,
+    // VERY LONG CONNECTION TIMEOUTS
+    connectTimeout: 60000,
+    upgradeTimeout: 30000,
+    // ADDITIONAL STABILITY OPTIONS
+    allowEIO3: true,
+    cookie: false,
 });
 
 // 30 Minutes Cooldown
 const COOLDOWN_TIME = 30 * 60 * 1000; 
 
 const waitingQueue = []; 
-const chatHistory = new Map(); // fingerprint -> Set of { id, expiry }
-const userSessions = new Map(); // fingerprint -> { socketId, lastActive, room, partnerFingerprint }
+const chatHistory = new Map();
+const userSessions = new Map();
 
-// Cleanup function to remove expired cooldown records
-const cleanupExpiredRecords = () => {
-    const now = Date.now();
-    for (const [fingerprint, historySet] of chatHistory.entries()) {
-        const validRecords = [...historySet].filter(record => record.expiry > now);
-        if (validRecords.length === 0) {
-            chatHistory.delete(fingerprint);
-        } else {
-            chatHistory.set(fingerprint, new Set(validRecords));
-        }
-    }
-};
+// DISABLED: Cleanup function to remove expired cooldown records
+// const cleanupExpiredRecords = () => {
+//     const now = Date.now();
+//     for (const [fingerprint, historySet] of chatHistory.entries()) {
+//         const validRecords = [...historySet].filter(record => record.expiry > now);
+//         if (validRecords.length === 0) {
+//             chatHistory.delete(fingerprint);
+//         } else {
+//             chatHistory.set(fingerprint, new Set(validRecords));
+//         }
+//     }
+// };
 
-// Run cleanup every 5 minutes
-setInterval(cleanupExpiredRecords, 5 * 60 * 1000);
+// DISABLED: No automatic cleanup
+// setInterval(cleanupExpiredRecords, 5 * 60 * 1000);
 
-// Clean up dead user sessions
-const cleanupDeadSessions = () => {
-    const now = Date.now();
-    let cleaned = 0;
-    
-    for (const [fingerprint, session] of userSessions.entries()) {
-        // If session hasn't been active for 30 seconds, clean it up
-        if (now - session.lastActive > 30000) {
-            console.log(`[CLEANUP] Removing dead session for ${fingerprint}`);
-            
-            // If user was in a room, notify partner
-            if (session.room && session.partnerFingerprint) {
-                const partnerSession = userSessions.get(session.partnerFingerprint);
-                if (partnerSession && partnerSession.socketId) {
-                    io.to(partnerSession.socketId).emit('partner_disconnected');
-                    console.log(`[CLEANUP] Notified partner ${session.partnerFingerprint}`);
-                    
-                    // Clean up partner's session
-                    userSessions.delete(session.partnerFingerprint);
-                }
-            }
-            
-            userSessions.delete(fingerprint);
-            cleaned++;
-        }
-    }
-    
-    if (cleaned > 0) {
-        console.log(`[CLEANUP] Removed ${cleaned} dead sessions`);
-    }
-};
+// DISABLED: No dead session cleanup
+// const cleanupDeadSessions = () => {
+//     const now = Date.now();
+//     let cleaned = 0;
+//     
+//     for (const [fingerprint, session] of userSessions.entries()) {
+//         // NO cleanup - sessions stay forever
+//     }
+// };
 
-setInterval(cleanupDeadSessions, 15000); // Every 15 seconds
+// DISABLED: No interval cleanup
+// setInterval(cleanupDeadSessions, 30000);
 
 io.on('connection', (socket) => {
-    console.log(`[CONN] New socket connected: ${socket.id}`);
-
-    // Handle disconnection immediately
+    const clientIp = socket.handshake.address;
+    const userAgent = socket.handshake.headers['user-agent'] || 'unknown';
+    const deviceId = socket.handshake.auth?.fingerprint || socket.handshake.query?.fingerprint || 'unknown';
+    
+    console.log(`[CONN] New connection: ${socket.id} | Device: ${deviceId} | IP: ${clientIp}`);
+    
+    // NO heartbeat monitoring - keep connection alive forever
+    // let isAlive = true;
+    // let missedPings = 0;
+    // const maxMissedPings = 3;
+    
+    // DISABLED: No heartbeat interval
+    // const heartbeatInterval = setInterval(() => {
+    //     // NO automatic disconnection
+    // }, 10000);
+    
+    // Listen for pong response (but don't disconnect on failure)
+    socket.conn.on("pong", () => {
+        console.log(`[PONG] ${deviceId} responded to ping`);
+        // Don't track missed pings
+    });
+    
+    // Handle disconnection ONLY when client disconnects
     socket.on('disconnect', (reason) => {
-        console.log(`[DISCONNECT] ${socket.id} disconnected. Reason: ${reason}`);
+        console.log(`[DISCONNECT] ${deviceId} (${socket.id}) manually disconnected. Reason: ${reason}`);
+        
+        // Clear any intervals (none active now)
+        // if (heartbeatInterval) clearInterval(heartbeatInterval);
         
         // Find user by socket ID
         for (const [fingerprint, session] of userSessions.entries()) {
             if (session.socketId === socket.id) {
-                console.log(`[DISCONNECT] Found user ${fingerprint} with socket ${socket.id}`);
+                console.log(`[DISCONNECT] Removing user ${fingerprint} (manual disconnect)`);
                 
                 // If user was in a chat room, notify partner
                 if (session.room && session.partnerFingerprint) {
                     const partnerSession = userSessions.get(session.partnerFingerprint);
                     if (partnerSession && partnerSession.socketId) {
-                        console.log(`[DISCONNECT] Notifying partner ${session.partnerFingerprint}`);
+                        console.log(`[DISCONNECT] Notifying partner ${session.partnerFingerprint} about manual disconnect`);
                         io.to(partnerSession.socketId).emit('partner_disconnected');
                         
-                        // Clean up partner's room info
+                        // Clean up partner's room info (partner stays connected though)
                         partnerSession.room = null;
                         partnerSession.partnerFingerprint = null;
-                        partnerSession.lastActive = Date.now();
                     }
                 }
                 
@@ -107,11 +120,17 @@ io.on('connection', (socket) => {
                     console.log(`[DISCONNECT] Removed ${fingerprint} from waiting queue`);
                 }
                 
-                // Remove the session
+                // Remove the session (ONLY on manual disconnect)
                 userSessions.delete(fingerprint);
                 break;
             }
         }
+    });
+
+    // Handle errors (don't disconnect on error)
+    socket.on('error', (error) => {
+        console.log(`[ERROR] ${deviceId}:`, error.message);
+        // NO auto-disconnect on error
     });
 
     socket.on('find_partner', ({ fingerprint, userData }) => {
@@ -120,14 +139,16 @@ io.on('connection', (socket) => {
         const { gender, partnerGender, showGender, username } = userData || {};
         console.log(`[DEBUG] ${fingerprint} (${gender || 'anonymous'}) looking for ${partnerGender || 'any'}`);
 
-        // Update or create user session
+        // Update or create user session (NO expiry)
         const now = Date.now();
         const userSession = {
             socketId: socket.id,
             lastActive: now,
             room: null,
             partnerFingerprint: null,
-            userData: { gender, partnerGender, showGender, username }
+            userData: { gender, partnerGender, showGender, username },
+            deviceId: deviceId,
+            connectedAt: now // Track when they connected
         };
         userSessions.set(fingerprint, userSession);
 
@@ -141,10 +162,9 @@ io.on('connection', (socket) => {
                 if (partnerSession && partnerSession.socketId) {
                     io.to(partnerSession.socketId).emit('partner_disconnected');
                     
-                    // Clean partner's session
+                    // Clean partner's session (but keep them connected)
                     partnerSession.room = null;
                     partnerSession.partnerFingerprint = null;
-                    partnerSession.lastActive = now;
                 }
             }
             
@@ -217,7 +237,9 @@ io.on('connection', (socket) => {
                     partnerGender: partner.partnerGender, 
                     showGender: partner.showGender, 
                     username: partner.username 
-                }
+                },
+                deviceId: partner.deviceId || 'unknown',
+                connectedAt: partner.connectedAt || now
             };
             partnerSession.room = roomName;
             partnerSession.partnerFingerprint = fingerprint;
@@ -251,7 +273,9 @@ io.on('connection', (socket) => {
                 gender, 
                 partnerGender, 
                 showGender, 
-                username 
+                username,
+                deviceId: deviceId,
+                joinedAt: now
             });
             console.log(`[QUEUE] Added ${fingerprint} to queue. Size: ${waitingQueue.length}`);
             socket.emit('waiting', 'Searching for partner...');
@@ -268,7 +292,7 @@ io.on('connection', (socket) => {
             console.log(`[QUEUE] Removed ${fingerprint}. Queue size: ${waitingQueue.length}`);
         }
         
-        // Update last active but keep session
+        // Keep session alive, just update last active
         if (userSessions.has(fingerprint)) {
             userSessions.get(fingerprint).lastActive = Date.now();
         }
@@ -278,7 +302,7 @@ io.on('connection', (socket) => {
         socket.to(room).emit('receive_message', message);
         console.log(`[MSG] ${socket.id} -> ${room}: ${message.substring(0, 50)}...`);
         
-        // Update last active time
+        // Update last active time (but don't cleanup based on this)
         for (const [fingerprint, session] of userSessions.entries()) {
             if (session.socketId === socket.id) {
                 session.lastActive = Date.now();
@@ -291,7 +315,7 @@ io.on('connection', (socket) => {
         socket.to(room).emit('partner_typing', isTyping);
         console.log(`[TYPING] ${socket.id} in ${room}: ${isTyping ? 'typing...' : 'stopped'}`);
         
-        // Update last active time
+        // Update last active time (but don't cleanup based on this)
         for (const [fingerprint, session] of userSessions.entries()) {
             if (session.socketId === socket.id) {
                 session.lastActive = Date.now();
@@ -301,7 +325,7 @@ io.on('connection', (socket) => {
     });
 
     socket.on('leave_chat', ({ room, fingerprint }) => {
-        console.log(`[LEAVE] ${fingerprint} leaving room ${room}`);
+        console.log(`[LEAVE] ${fingerprint} manually leaving room ${room}`);
         
         if (room && fingerprint) {
             // Update user's session
@@ -311,17 +335,16 @@ io.on('connection', (socket) => {
                 if (userSession.partnerFingerprint) {
                     const partnerSession = userSessions.get(userSession.partnerFingerprint);
                     if (partnerSession && partnerSession.socketId) {
-                        console.log(`[LEAVE] Notifying partner ${userSession.partnerFingerprint}`);
+                        console.log(`[LEAVE] Notifying partner ${userSession.partnerFingerprint} about manual leave`);
                         io.to(partnerSession.socketId).emit('partner_disconnected');
                         
-                        // Clean partner's session
+                        // Clean partner's session (but keep connected)
                         partnerSession.room = null;
                         partnerSession.partnerFingerprint = null;
-                        partnerSession.lastActive = Date.now();
                     }
                 }
                 
-                // Clean user's session
+                // Clean user's session (but keep connected)
                 userSession.room = null;
                 userSession.partnerFingerprint = null;
                 userSession.lastActive = Date.now();
@@ -332,16 +355,66 @@ io.on('connection', (socket) => {
         }
     });
 
-    // Heartbeat to keep sessions alive
+    // Optional: Heartbeat for monitoring only (NO DISCONNECT)
     socket.on('heartbeat', ({ fingerprint }) => {
         if (fingerprint && userSessions.has(fingerprint)) {
             userSessions.get(fingerprint).lastActive = Date.now();
+            console.log(`[HEARTBEAT] ${fingerprint} still alive`);
         }
     });
+});
 
-    // Handle errors
-    socket.on('error', (error) => {
-        console.log(`[ERROR] ${socket.id}:`, error);
+// Debug endpoint to see ALL connections (including "dead" ones)
+app.get('/debug/connections', (req, res) => {
+    const activeSockets = [];
+    
+    io.of("/").sockets.forEach((socket) => {
+        activeSockets.push({
+            id: socket.id,
+            connected: socket.connected,
+            deviceId: socket.handshake.auth?.fingerprint || socket.handshake.query?.fingerprint,
+            handshake: {
+                address: socket.handshake.address,
+                time: new Date(socket.handshake.time).toISOString(),
+                userAgent: socket.handshake.headers['user-agent']
+            },
+            rooms: Array.from(socket.rooms),
+            connectedFor: Date.now() - socket.handshake.time
+        });
+    });
+    
+    res.json({
+        serverTime: new Date().toISOString(),
+        totalConnections: activeSockets.length,
+        connections: activeSockets,
+        waitingQueue: waitingQueue.map(u => ({
+            fingerprint: u.fingerprint,
+            deviceId: u.deviceId,
+            gender: u.gender,
+            inQueueSince: Date.now() - (u.joinedAt || Date.now()),
+            waitingTime: Math.floor((Date.now() - (u.joinedAt || Date.now())) / 1000) + 's'
+        })),
+        userSessions: Array.from(userSessions.entries()).map(([fp, session]) => ({
+            fingerprint: fp,
+            deviceId: session.deviceId,
+            socketId: session.socketId,
+            lastActive: session.lastActive ? Math.floor((Date.now() - session.lastActive) / 1000) + 's ago' : 'never',
+            connectedFor: Math.floor((Date.now() - (session.connectedAt || Date.now())) / 1000) + 's',
+            room: session.room,
+            partner: session.partnerFingerprint,
+            status: session.room ? 'In Chat' : session.connectedAt ? 'Connected' : 'Unknown'
+        }))
+    });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+    res.json({
+        status: 'UP',
+        timestamp: new Date().toISOString(),
+        connections: io.engine.clientsCount,
+        waitingQueue: waitingQueue.length,
+        userSessions: userSessions.size
     });
 });
 
@@ -362,4 +435,9 @@ process.on('SIGTERM', () => {
     });
 });
 
-server.listen(3001, () => console.log("🚀 Server active on port 3001"));
+server.listen(3001, () => {
+    console.log("🚀 Server active on port 3001");
+    console.log("📊 Debug endpoint: http://localhost:3001/debug/connections");
+    console.log("❤️  Health check: http://localhost:3001/health");
+    console.log("⚠️  NO AUTO-DISCONNECT MODE: Sessions stay until manual disconnect");
+});
