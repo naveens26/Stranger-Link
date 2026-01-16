@@ -7,28 +7,44 @@ const ChatInput = ({
   onSendMessage, 
   onTypingStart, 
   onTypingEnd, 
-  room 
+  room,
+  onKeyboardToggle // ADD THIS
 }) => {
   const typingTimeoutRef = useRef(null);
   const inputRef = useRef(null);
 
-  // Mobile-specific fix: Handle keyboard appearance
+  // Auto-focus when room is connected
+  useEffect(() => {
+    if (room && inputRef.current) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 1000);
+    }
+  }, [room]);
+
+  // Handle keyboard visibility
   useEffect(() => {
     const handleFocus = () => {
-      // Scroll to bottom when input is focused (keyboard appears)
+      if (onKeyboardToggle) onKeyboardToggle(true);
       setTimeout(() => {
         window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' });
       }, 300);
     };
 
+    const handleBlur = () => {
+      if (onKeyboardToggle) onKeyboardToggle(false);
+    };
+
     const input = inputRef.current;
     if (input) {
       input.addEventListener('focus', handleFocus);
+      input.addEventListener('blur', handleBlur);
       return () => {
         input.removeEventListener('focus', handleFocus);
+        input.removeEventListener('blur', handleBlur);
       };
     }
-  }, []);
+  }, [onKeyboardToggle]);
 
   const handleTyping = (text) => {
     onMessageChange(text);
@@ -58,26 +74,19 @@ const ChatInput = ({
   return (
     <form 
       onSubmit={onSendMessage} 
-      className="p-4 bg-slate-900 border-t border-slate-800 flex gap-2 sticky bottom-0 z-30"
-      style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+      className="p-4 flex gap-2"
+      style={{ 
+        paddingBottom: 'max(1rem, env(safe-area-inset-bottom, 1rem))'
+      }}
     >
       <input 
         ref={inputRef}
         value={message}
         onChange={(e) => handleTyping(e.target.value)}
         onKeyDown={handleKeyDown}
-        onFocus={() => {
-          if (room && message.length === 0) {
-            onTypingStart(true);
-          }
-        }}
-        onBlur={() => {
-          if (room) {
-            onTypingStart(false);
-          }
-        }}
         placeholder="Type your message..."
         className="flex-1 bg-slate-800 border-none rounded-xl px-4 py-3 outline-none focus:ring-2 focus:ring-blue-500 text-base"
+        autoComplete="off"
       />
       <button 
         type="submit"

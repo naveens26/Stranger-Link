@@ -1,12 +1,12 @@
-// App.jsx
+// App.jsx - FINAL VERSION with desktop/mobile support
 import { useEffect, useMemo, useRef, useState } from 'react';
 import ChatInput from './components/ChatInput';
 import ChatInterface from './components/ChatInterface';
 import Header from './components/Header';
 import HomeView from './components/HomeView';
+import PartnerInfo from './components/PartnerInfo';
 import SearchView from './components/SearchView';
 import { useSocket } from './hooks/useSocket';
-
 import './styles/animations.css';
 
 export default function App() {
@@ -31,9 +31,25 @@ export default function App() {
     showGender: false
   });
   
+  // Keyboard state
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+  
   const messagesEndRef = useRef();
   const chatContainerRef = useRef();
   const scrollTimeoutRef = useRef(null);
+
+  // Detect mobile/desktop
+  useEffect(() => {
+    const checkIfMobile = () => {
+      setIsMobile(window.innerWidth < 768); // md breakpoint
+    };
+    
+    checkIfMobile();
+    window.addEventListener('resize', checkIfMobile);
+    
+    return () => window.removeEventListener('resize', checkIfMobile);
+  }, []);
 
   // Handle page unload (refresh/close)
   useEffect(() => {
@@ -167,8 +183,15 @@ export default function App() {
     showNotification("Preferences saved!");
   };
 
+  // Close keyboard when tapping messages
+  const handleCloseKeyboard = () => {
+    if (document.activeElement && document.activeElement.tagName === 'INPUT') {
+      document.activeElement.blur();
+    }
+  };
+
   return (
-    <div className="flex flex-col h-screen max-h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
+    <div className="flex flex-col h-screen bg-[#0f172a] text-slate-200 overflow-hidden font-sans">
       {/* TOAST NOTIFICATION */}
       {notification && (
         <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-blue-600 text-white px-6 py-2 rounded-full shadow-2xl">
@@ -176,16 +199,20 @@ export default function App() {
         </div>
       )}
 
-      {/* Fixed Header */}
-      <Header 
-        room={room}
-        isSearching={isSearching}
-        onDisconnect={disconnectChat}
-        onCancelSearch={cancelSearch}
-        onFindPartner={findPartner}
-      />
+      {/* HEADER - Always visible on desktop, hides on mobile when keyboard open */}
+      <div className={`sticky top-0 z-40 ${
+        isMobile && isKeyboardOpen ? '-translate-y-full' : 'translate-y-0'
+      } transition-transform duration-300`}>
+        <Header 
+          room={room}
+          isSearching={isSearching}
+          onDisconnect={disconnectChat}
+          onCancelSearch={cancelSearch}
+          onFindPartner={findPartner}
+        />
+      </div>
 
-      {/* Main Content Area - Takes remaining space */}
+      {/* MAIN CONTENT AREA */}
       <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
         {!room && !isSearching ? (
           <div className="flex-1 overflow-y-auto p-4">
@@ -204,28 +231,35 @@ export default function App() {
             />
           </div>
         ) : (
-          <ChatInterface 
-            messages={messages}
-            partnerInfo={partnerInfo}
-            userData={userData}
-            isPartnerTyping={isPartnerTyping}
-            chatContainerRef={chatContainerRef}
-            messagesEndRef={messagesEndRef}
-          />
+          <>
+            {/* PARTNER INFO - ALWAYS VISIBLE */}
+            <PartnerInfo partnerInfo={partnerInfo} userData={userData} />
+
+            {/* CHAT INTERFACE - Tap to close keyboard (mobile only) */}
+            <ChatInterface 
+              messages={messages}
+              partnerInfo={partnerInfo}
+              isPartnerTyping={isPartnerTyping}
+              onCloseKeyboard={isMobile ? handleCloseKeyboard : undefined}
+              chatContainerRef={chatContainerRef}
+              messagesEndRef={messagesEndRef}
+            />
+
+            {/* CHAT INPUT - Always at bottom */}
+            <div className="sticky bottom-0 z-20 bg-slate-900 border-t border-slate-800">
+              <ChatInput 
+                message={message}
+                onMessageChange={setMessage}
+                onSendMessage={sendMessage}
+                onTypingStart={handleTypingStart}
+                onTypingEnd={() => handleTypingStart(false)}
+                room={room}
+                onKeyboardToggle={setIsKeyboardOpen}
+              />
+            </div>
+          </>
         )}
       </div>
-
-      {/* Chat Input - Fixed at bottom */}
-      {room && (
-        <ChatInput 
-          message={message}
-          onMessageChange={setMessage}
-          onSendMessage={sendMessage}
-          onTypingStart={handleTypingStart}
-          onTypingEnd={() => handleTypingStart(false)}
-          room={room}
-        />
-      )}
     </div>
   );
 }
